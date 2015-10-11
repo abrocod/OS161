@@ -46,6 +46,7 @@
 #include "opt-sfs.h"
 #include "opt-net.h"
 
+
 /*
  * In-kernel menu and command dispatcher.
  */
@@ -437,6 +438,7 @@ static const char *opsmenu[] = {
 	"[sync]    Sync filesystems          ",
 	"[panic]   Intentional panic         ",
 	"[q]       Quit and shut down        ",
+	"[dts]     Enable DB_THREADS debugging",
 	NULL
 };
 
@@ -497,6 +499,7 @@ cmd_testmenu(int n, char **a)
 static const char *mainmenu[] = {
 	"[?o] Operations menu                ",
 	"[?t] Tests menu                     ",
+	"[dth] Enable the output of debugging messages of type DB THREADS",
 #if OPT_SYNCHPROBS
 	"[sp1] Whale Mating                  ",
 #ifdef UW
@@ -520,6 +523,11 @@ cmd_mainmenu(int n, char **a)
 	return 0;
 }
 
+static int  cmd_dth(){
+	dbflags = dbflags | DB_THREADS;
+	return 0;
+}
+
 ////////////////////////////////////////
 //
 // Command table.
@@ -534,6 +542,9 @@ static struct {
 	{ "help",	cmd_mainmenu },
 	{ "?o",		cmd_opsmenu },
 	{ "?t",		cmd_testmenu },
+
+	/* debugging info */
+	{ "dth",    cmd_dth },
 
 	/* operations */
 	{ "s",		cmd_shell },
@@ -711,3 +722,4 @@ menu(char *args)
 		menu_execute(buf, 0);
 	}
 }
+
