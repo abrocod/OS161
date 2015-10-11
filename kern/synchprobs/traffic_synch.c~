@@ -109,7 +109,6 @@ intersection_before_entry(Direction origin, Direction destination)
 
 
 // LJC: do we know the thread_num of the calling thread? test this !! 
-// if yes, then we save trouble by not using nested for loop
   Vehicle v;
   v.origin = origin;
   v.destination = destination;
