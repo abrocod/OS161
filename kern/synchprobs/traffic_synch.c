@@ -3,6 +3,8 @@
 #include <synchprobs.h>
 #include <synch.h>
 #include <opt-A1.h>
+#include <thread.h> // added
+#include <current.h> // added
 
 /* 
  * This simple default synchronization mechanism allows only vehicle at a time
@@ -27,7 +29,9 @@
 
 //static struct semaphore *intersectionSem;
  static struct cv *intersectionCV;
+ static struct lock *mutex;
  static Vehicle * volatile intersectionVehicles[MAX_THREADS];
+ static int vehicleCount;
 
 
 /* 
@@ -51,6 +55,9 @@ intersection_sync_init(void)
 */
 
   intersectionCV = cv_create("intersectionBusy");
+  mutex = lock_create("mutex");
+  vehicleCount = 0;
+
   if (intersectionCV == NULL) {
     panic("Couldn't create intersectionCV")
   }
@@ -78,6 +85,8 @@ intersection_sync_cleanup(void)
 */
   KASSERT(intersectionCV != NULL);
   cv_destory(intersectionCV);
+  lock_destory(mutex);
+
   for (i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
   }
@@ -101,48 +110,51 @@ intersection_sync_cleanup(void)
 void
 intersection_before_entry(Direction origin, Direction destination) 
 {
-  /* replace this default implementation with your own implementation */
-  // (void)origin;  /* avoid compiler complaint about unused parameter */
-  // (void)destination;  // avoid compiler complaint about unused parameter 
-  // KASSERT(intersectionSem != NULL);
-  // P(intersectionSem);
-
-
 // LJC: do we know the thread_num of the calling thread? test this !! 
 // if yes, then we save trouble by not using nested for loop
   Vehicle v;
   v.origin = origin;
   v.destination = destination;
-  // directly use thread_num from calling thread
-  intersectionVehicles[thread_num] = &v;
-  for(i=0;i<NumThreads;i++) {
+  intersectionVehicles[vehicleCount] = &v;
+  vehicleCount += 1;
 
+  can_enter_intersection(vehicleCount);
 
-  }
 }
 
 
-bool can_enter_intersection(int thread_num) {
+void can_enter_intersection(int i) {
 /*
 	LJC: this check is crucial, especially check vehicles[i]==NULL. 
 	Because when some thread run the check_constraint function, 
 	other threads within vehicles may not even be initialized !!
     */
     for (int i=0; i<MAX_THREADS; i++) {
-        if ((i==thread_num) || (intersectionVehicles[i] == NULL)) continue;
+        lock_acquire(mutex);
+        if ((i==thread_num) || (intersectionVehicles[i] == NULL)) {
+          continue;
+        }
     /* no conflict if both vehicles have the same origin */
-        if (intersectionVehicles[i]->origin == intersectionVehicles[thread_num]->origin) continue;
+        if (intersectionVehicles[i]->origin == intersectionVehicles[thread_num]->origin) {
+          continue;
+        }
     /* no conflict if vehicles go in opposite directions */
         if ((intersectionVehicles[i]->origin == intersectionVehicles[thread_num]->destination) &&
-        (intersectionVehicles[i]->destination == intersectionVehicles[thread_num]->origin)) continue;
+        (intersectionVehicles[i]->destination == intersectionVehicles[thread_num]->origin)) {
+          continue;
+        }
     /* no conflict if one makes a right turn and 
        the other has a different destination */
         if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[thread_num])) &&
-  (intersectionVehicles[thread_num]->destination != intersectionVehicles[i]->destination)) continue;
-
-        return false;
+  (intersectionVehicles[thread_num]->destination != intersectionVehicles[i]->destination)) {
+          continue;
+        } else {
+          cv_wait(intersectionCV, mutex);
+          lock_release(mutex);
+          return;
+        }
     }
-    return true;
+    return;
 }
 
 /*
@@ -159,10 +171,13 @@ bool can_enter_intersection(int thread_num) {
 void
 intersection_after_exit(Direction origin, Direction destination) 
 {
-  /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  V(intersectionSem);
+  intersectionVehicles[vehicleCount] = NULL;
+  vehicleCount -= 1;
+  lock_acquire(mutex);
+  cv_broadcast(intersectionCV, mutex);
+  lock_release(mutex);
+
+  return;
+
 }
 
