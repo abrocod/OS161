@@ -24,6 +24,10 @@
  * replace this with declarations of any synchronization and other variables you need here
  */
 
+/* functions that defined and used internally */
+static bool right_turn(Vehicle *v);
+static void can_enter_intersection(int vehicleCount);
+
 #define MAX_THREADS 10  // is it right ?
 
 
@@ -110,8 +114,6 @@ intersection_sync_cleanup(void)
 void
 intersection_before_entry(Direction origin, Direction destination) 
 {
-// LJC: do we know the thread_num of the calling thread? test this !! 
-// if yes, then we save trouble by not using nested for loop
   Vehicle v;
   v.origin = origin;
   v.destination = destination;
@@ -123,7 +125,7 @@ intersection_before_entry(Direction origin, Direction destination)
 }
 
 
-void can_enter_intersection(int i) {
+void can_enter_intersection(int vehicleCount) {
 /*
 	LJC: this check is crucial, especially check vehicles[i]==NULL. 
 	Because when some thread run the check_constraint function, 
@@ -131,22 +133,22 @@ void can_enter_intersection(int i) {
     */
     for (int i=0; i<MAX_THREADS; i++) {
         lock_acquire(mutex);
-        if ((i==thread_num) || (intersectionVehicles[i] == NULL)) {
+        if ((i==vehicleCount) || (intersectionVehicles[i] == NULL)) {
           continue;
         }
     /* no conflict if both vehicles have the same origin */
-        if (intersectionVehicles[i]->origin == intersectionVehicles[thread_num]->origin) {
+        if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount]->origin) {
           continue;
         }
     /* no conflict if vehicles go in opposite directions */
-        if ((intersectionVehicles[i]->origin == intersectionVehicles[thread_num]->destination) &&
-        (intersectionVehicles[i]->destination == intersectionVehicles[thread_num]->origin)) {
+        if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount]->destination) &&
+        (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount]->origin)) {
           continue;
         }
     /* no conflict if one makes a right turn and 
        the other has a different destination */
-        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[thread_num])) &&
-  (intersectionVehicles[thread_num]->destination != intersectionVehicles[i]->destination)) {
+        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount])) &&
+  (intersectionVehicles[vehicleCount]->destination != intersectionVehicles[i]->destination)) {
           continue;
         } else {
           cv_wait(intersectionCV, mutex);
@@ -155,6 +157,19 @@ void can_enter_intersection(int i) {
         }
     }
     return;
+}
+
+bool
+right_turn(Vehicle *v) {
+  KASSERT(v != NULL);
+  if (((v->origin == west) && (v->destination == south)) ||
+      ((v->origin == south) && (v->destination == east)) ||
+      ((v->origin == east) && (v->destination == north)) ||
+      ((v->origin == north) && (v->destination == west))) {
+    return true;
+  } else {
+    return false;
+  }
 }
 
 /*
