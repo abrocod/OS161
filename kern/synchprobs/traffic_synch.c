@@ -32,10 +32,10 @@ static void can_enter_intersection(int vehicleCount);
 
 
 //static struct semaphore *intersectionSem;
- static struct cv *intersectionCV;
- static struct lock *mutex;
+ static struct cv* intersectionCV;
  static Vehicle * volatile intersectionVehicles[MAX_THREADS];
- static int vehicleCount;
+ static struct lock* locks;
+ static volatile int vehicleCount;
 
 
 /* 
@@ -59,14 +59,15 @@ intersection_sync_init(void)
 */
 
   intersectionCV = cv_create("intersectionBusy");
-  mutex = lock_create("mutex");
   vehicleCount = 0;
+  locks = kmalloc(sizeof(struct lock *)* MAX_THREADS);
 
   if (intersectionCV == NULL) {
     panic("Couldn't create intersectionCV")
   }
   for (i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = (Vehicle * volatile) NULL;
+    locks[i] = lock_create("");
   }
   return;
 
@@ -89,10 +90,10 @@ intersection_sync_cleanup(void)
 */
   KASSERT(intersectionCV != NULL);
   cv_destory(intersectionCV);
-  lock_destory(mutex);
 
   for (i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
+    locks[i] = NULL;
   }
   return;
 }
@@ -132,7 +133,7 @@ void can_enter_intersection(int vehicleCount) {
 	other threads within vehicles may not even be initialized !!
     */
     for (int i=0; i<MAX_THREADS; i++) {
-        lock_acquire(mutex);
+        lock_acquire(locks[vehicleCount]);
         if ((i==vehicleCount) || (intersectionVehicles[i] == NULL)) {
           continue;
         }
@@ -151,8 +152,8 @@ void can_enter_intersection(int vehicleCount) {
   (intersectionVehicles[vehicleCount]->destination != intersectionVehicles[i]->destination)) {
           continue;
         } else {
-          cv_wait(intersectionCV, mutex);
-          lock_release(mutex);
+          cv_wait(intersectionCV, locks[vehicleCount]);
+          lock_release(locks[vehicleCount]);
           return;
         }
     }
@@ -187,10 +188,12 @@ void
 intersection_after_exit(Direction origin, Direction destination) 
 {
   intersectionVehicles[vehicleCount] = NULL;
+
+  lock_acquire(locks[vehicleCount]);
+  cv_broadcast(intersectionCV, locks[vehicleCount]);
+  lock_release(locks[vehicleCount]);
+
   vehicleCount -= 1;
-  lock_acquire(mutex);
-  cv_broadcast(intersectionCV, mutex);
-  lock_release(mutex);
 
   return;
 
