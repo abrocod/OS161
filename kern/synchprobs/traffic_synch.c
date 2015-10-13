@@ -28,7 +28,7 @@
 static bool right_turn(Vehicle *v);
 static void can_enter_intersection(int vehicleCount);
 
-#define MAX_THREADS 10  // is it right ?
+#define MAX_THREADS 10  // keep this number same as traffic.c 
 
 
 //static struct semaphore *intersectionSem;
@@ -93,6 +93,7 @@ intersection_sync_cleanup(void)
 
   for (i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
+    cv_destory(locks[i]);
     locks[i] = NULL;
   }
   return;
