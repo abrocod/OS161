@@ -199,6 +199,9 @@ intersection_after_exit(Direction origin, Direction destination)
 {
   intersectionVehicles[vehicleCount] = NULL;
 
+  (void) origin;
+  (void) destination;
+
   lock_acquire(locks[vehicleCount]);
   cv_broadcast(intersectionCV, locks[vehicleCount]);
   lock_release(locks[vehicleCount]);
