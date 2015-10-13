@@ -96,11 +96,11 @@ intersection_sync_cleanup(void)
   sem_destroy(intersectionSem);
 */
   KASSERT(intersectionCV != NULL);
-  cv_destory(intersectionCV);
+  cv_destroy(intersectionCV);
 
   for (int i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
-    cv_destory(locks[i]);
+    lock_destroy(locks[i]);
     locks[i] = NULL;
   }
   return;
