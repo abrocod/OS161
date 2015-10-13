@@ -24,19 +24,26 @@
  * replace this with declarations of any synchronization and other variables you need here
  */
 
-/* functions that defined and used internally */
-static bool right_turn(Vehicle *v);
-static void can_enter_intersection(int vehicleCount);
+
+
 
 #define MAX_THREADS 10  // keep this number same as traffic.c 
 
+typedef struct Vehicles
+{
+  Direction origin;
+  Direction destination;
+} Vehicle;
 
 //static struct semaphore *intersectionSem;
  static struct cv* intersectionCV;
- static Vehicle * volatile intersectionVehicles[MAX_THREADS];
- static struct lock* locks;
+ static Vehicle* volatile intersectionVehicles[MAX_THREADS];
+ static struct lock* volatile locks[MAX_THREADS];
  static volatile int vehicleCount;
 
+/* functions that defined and used internally */
+static bool right_turn(Vehicle *v);
+static void can_enter_intersection(int vehicleCount);
 
 /* 
  * The simulation driver will call this function once before starting
@@ -60,12 +67,12 @@ intersection_sync_init(void)
 
   intersectionCV = cv_create("intersectionBusy");
   vehicleCount = 0;
-  locks = kmalloc(sizeof(struct lock *)* MAX_THREADS);
+  //locks = kmalloc(sizeof(struct lock *)* MAX_THREADS);
 
   if (intersectionCV == NULL) {
-    panic("Couldn't create intersectionCV")
+    panic("Couldn't create intersectionCV");
   }
-  for (i=0; i<MAX_THREADS; i++) {
+  for (int i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = (Vehicle * volatile) NULL;
     locks[i] = lock_create("");
   }
@@ -91,7 +98,7 @@ intersection_sync_cleanup(void)
   KASSERT(intersectionCV != NULL);
   cv_destory(intersectionCV);
 
-  for (i=0; i<MAX_THREADS; i++) {
+  for (int i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
     cv_destory(locks[i]);
     locks[i] = NULL;
@@ -113,19 +120,19 @@ intersection_sync_cleanup(void)
  * return value: none
  */
 
-void
-intersection_before_entry(Direction origin, Direction destination) 
-{
-  Vehicle v;
-  v.origin = origin;
-  v.destination = destination;
-  intersectionVehicles[vehicleCount] = &v;
-  vehicleCount += 1;
 
-  can_enter_intersection(vehicleCount);
-
+bool
+right_turn(Vehicle *v) {
+  KASSERT(v != NULL);
+  if (((v->origin == west) && (v->destination == south)) ||
+      ((v->origin == south) && (v->destination == east)) ||
+      ((v->origin == east) && (v->destination == north)) ||
+      ((v->origin == north) && (v->destination == west))) {
+    return true;
+  } else {
+    return false;
+  }
 }
-
 
 void can_enter_intersection(int vehicleCount) {
 /*
@@ -161,18 +168,21 @@ void can_enter_intersection(int vehicleCount) {
     return;
 }
 
-bool
-right_turn(Vehicle *v) {
-  KASSERT(v != NULL);
-  if (((v->origin == west) && (v->destination == south)) ||
-      ((v->origin == south) && (v->destination == east)) ||
-      ((v->origin == east) && (v->destination == north)) ||
-      ((v->origin == north) && (v->destination == west))) {
-    return true;
-  } else {
-    return false;
-  }
+
+void
+intersection_before_entry(Direction origin, Direction destination) 
+{
+  Vehicle v;
+  v.origin = origin;
+  v.destination = destination;
+  intersectionVehicles[vehicleCount] = &v;
+  vehicleCount += 1;
+
+  can_enter_intersection(vehicleCount);
+
 }
+
+
 
 /*
  * The simulation driver will call this function each time a vehicle
@@ -189,6 +199,9 @@ void
 intersection_after_exit(Direction origin, Direction destination) 
 {
   intersectionVehicles[vehicleCount] = NULL;
+
+  (void) origin;
+  (void) destination;
 
   lock_acquire(locks[vehicleCount]);
   cv_broadcast(intersectionCV, locks[vehicleCount]);
