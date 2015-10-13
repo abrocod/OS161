@@ -135,33 +135,33 @@ right_turn(Vehicle *v) {
 }
 
 void can_enter_intersection(int vehicleCount) {
-/*
+  /*
 	LJC: this check is crucial, especially check vehicles[i]==NULL. 
 	Because when some thread run the check_constraint function, 
 	other threads within vehicles may not even be initialized !!
-    */
+  */
     for (int i=0; i<MAX_THREADS; i++) {
-        lock_acquire(locks[vehicleCount]);
-        if ((i==vehicleCount) || (intersectionVehicles[i] == NULL)) {
+        lock_acquire(locks[vehicleCount-1]);
+        if ((i==vehicleCount-1) || (intersectionVehicles[i] == NULL)) {
           continue;
         }
     /* no conflict if both vehicles have the same origin */
-        if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount]->origin) {
+        if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->origin) {
           continue;
         }
     /* no conflict if vehicles go in opposite directions */
-        if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount]->destination) &&
-        (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount]->origin)) {
+        if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->destination) &&
+        (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount-1]->origin)) {
           continue;
         }
     /* no conflict if one makes a right turn and 
        the other has a different destination */
-        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount])) &&
-  (intersectionVehicles[vehicleCount]->destination != intersectionVehicles[i]->destination)) {
+        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount-1])) &&
+  (intersectionVehicles[vehicleCount-1]->destination != intersectionVehicles[i]->destination)) {
           continue;
         } else {
-          cv_wait(intersectionCV, locks[vehicleCount]);
-          lock_release(locks[vehicleCount]);
+          cv_wait(intersectionCV, locks[vehicleCount-1]);
+          lock_release(locks[vehicleCount-1]);
           return;
         }
     }
@@ -175,9 +175,11 @@ intersection_before_entry(Direction origin, Direction destination)
   Vehicle v;
   v.origin = origin;
   v.destination = destination;
-  intersectionVehicles[vehicleCount] = &v;
+
   vehicleCount += 1;
 
+  intersectionVehicles[vehicleCount] = &v;
+  
   can_enter_intersection(vehicleCount);
 
 }
@@ -198,16 +200,15 @@ intersection_before_entry(Direction origin, Direction destination)
 void
 intersection_after_exit(Direction origin, Direction destination) 
 {
-  intersectionVehicles[vehicleCount] = NULL;
-
   (void) origin;
   (void) destination;
+
+  vehicleCount -= 1;
+  intersectionVehicles[vehicleCount] = NULL;
 
   lock_acquire(locks[vehicleCount]);
   cv_broadcast(intersectionCV, locks[vehicleCount]);
   lock_release(locks[vehicleCount]);
-
-  vehicleCount -= 1;
 
   return;
 
