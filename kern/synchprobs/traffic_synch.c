@@ -155,17 +155,20 @@ threads will be waiting for the lock and therefore leads to deadlock. s
 */
         if ((i==vehicleCount-1) || (intersectionVehicles[i] == NULL)) {
 kprintf("c1");
+          if (i==MAX_THREADS-1) safe=1;
           continue;
         }
     /* no conflict if both vehicles have the same origin */
         if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->origin) {
 kprintf("c2");
+          if (i==MAX_THREADS-1) safe=1;
           continue;
         }
     /* no conflict if vehicles go in opposite directions */
         if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->destination) &&
         (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount-1]->origin)) {
 kprintf("c3");
+          if (i==MAX_THREADS-1) safe=1;
           continue;
         }
     /* no conflict if one makes a right turn and 
@@ -173,15 +176,16 @@ kprintf("c3");
         if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount-1])) &&
   (intersectionVehicles[vehicleCount-1]->destination != intersectionVehicles[i]->destination)) {
 kprintf("c4");
+          if (i==MAX_THREADS-1) safe=1;
           continue;
         }         
-        if (i==MAX_THREADS-1) {
-        // when all vehicles passed safety check:
-          safe = 1; // change safe flag to 1 when we check all vehicles
-          break; // break the for loop, when we check all the vehicles
-        }
 kprintf("have conflict: put vehicle %d into cv\n", vehicleCount-1);
         lock_acquire(locks[vehicleCount-1]);
+
+
+// here: should also remove this vehicle from the intersectionVehicles list !!
+// because we are using intersectionVehicles to make judgement !
+// otherwise this will cause deadlock
         cv_wait(intersectionCV, locks[vehicleCount-1]);
         lock_release(locks[vehicleCount-1]);
         break; // this break the for loop, and go back to while loop
@@ -204,9 +208,11 @@ intersection_before_entry(Direction origin, Direction destination)
 
   vehicleCount += 1;
 
-  intersectionVehicles[vehicleCount-1] = &v;
+  intersectionVehicles[vehicleCount-1] = &v; // change this, first check if I can put
+// the vehicle into this list, then add it 
   
   can_enter_intersection(vehicleCount);
+// can_enter_intersection(&v)
 
 }
 
