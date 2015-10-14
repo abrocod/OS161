@@ -27,7 +27,7 @@
 
 
 
-#define MAX_THREADS 10  // is it right ?
+#define MAX_THREADS 10  // keep this number same as traffic.c 
 
 typedef struct Vehicles
 {
@@ -44,6 +44,9 @@ typedef struct Vehicles
 /* functions that defined and used internally */
 static bool right_turn(Vehicle *v);
 static void can_enter_intersection(int vehicleCount);
+void intersection_before_entry(Direction origin, Direction destination);
+void intersection_after_exit(Direction origin, Direction destination);
+
 
 /* 
  * The simulation driver will call this function once before starting
@@ -96,10 +99,11 @@ intersection_sync_cleanup(void)
   sem_destroy(intersectionSem);
 */
   KASSERT(intersectionCV != NULL);
-  cv_destory(intersectionCV);
+  cv_destroy(intersectionCV);
 
   for (int i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
+    lock_destroy(locks[i]);
     locks[i] = NULL;
   }
   return;
@@ -134,37 +138,57 @@ right_turn(Vehicle *v) {
 }
 
 void can_enter_intersection(int vehicleCount) {
-/*
+  /*
 	LJC: this check is crucial, especially check vehicles[i]==NULL. 
 	Because when some thread run the check_constraint function, 
 	other threads within vehicles may not even be initialized !!
-    */
+  */
+  int safe = 0;
+  while (safe==0) {
     for (int i=0; i<MAX_THREADS; i++) {
-        lock_acquire(locks[vehicleCount]);
-        if ((i==vehicleCount) || (intersectionVehicles[i] == NULL)) {
+kprintf("vehicleCount is: %d\n", vehicleCount);
+        //lock_acquire(locks[vehicleCount-1]); // ERROR to be remember!! 
+/*
+the above lock_acquire will cause deadlock!! each time the for loop runs, it 
+will try to acquire the lock. after a certain number of loop, all current 
+threads will be waiting for the lock and therefore leads to deadlock. s
+*/
+        if ((i==vehicleCount-1) || (intersectionVehicles[i] == NULL)) {
+kprintf("c1");
           continue;
         }
     /* no conflict if both vehicles have the same origin */
-        if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount]->origin) {
+        if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->origin) {
+kprintf("c2");
           continue;
         }
     /* no conflict if vehicles go in opposite directions */
-        if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount]->destination) &&
-        (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount]->origin)) {
+        if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->destination) &&
+        (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount-1]->origin)) {
+kprintf("c3");
           continue;
         }
     /* no conflict if one makes a right turn and 
        the other has a different destination */
-        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount])) &&
-  (intersectionVehicles[vehicleCount]->destination != intersectionVehicles[i]->destination)) {
+        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount-1])) &&
+  (intersectionVehicles[vehicleCount-1]->destination != intersectionVehicles[i]->destination)) {
+kprintf("c4");
           continue;
+        }         
+        if (i==MAX_THREADS-1) {
+        // when all vehicles passed safety check:
+          safe = 1; // change safe flag to 1 when we check all vehicles
+          break; // break the for loop, when we check all the vehicles
         } else {
-          cv_wait(intersectionCV, locks[vehicleCount]);
-          lock_release(locks[vehicleCount]);
-          return;
+kprintf("c5");
+          lock_acquire(locks[vehicleCount-1]);
+          cv_wait(intersectionCV, locks[vehicleCount-1]);
+          lock_release(locks[vehicleCount-1]);
+          break; // this break the for loop, and go back to while loop
         }
     }
-    return;
+  }
+  return;
 }
 
 
@@ -174,9 +198,14 @@ intersection_before_entry(Direction origin, Direction destination)
   Vehicle v;
   v.origin = origin;
   v.destination = destination;
-  intersectionVehicles[vehicleCount] = &v;
+  KASSERT(4 > v.origin);
+  KASSERT(4 > v.destination);
+  KASSERT(v.origin != v.destination);
+
   vehicleCount += 1;
 
+  intersectionVehicles[vehicleCount-1] = &v;
+  
   can_enter_intersection(vehicleCount);
 
 }
@@ -197,16 +226,16 @@ intersection_before_entry(Direction origin, Direction destination)
 void
 intersection_after_exit(Direction origin, Direction destination) 
 {
-  intersectionVehicles[vehicleCount] = NULL;
-
   (void) origin;
   (void) destination;
+
+  vehicleCount -= 1;
+kprintf("I am freeing a vehicle!");
+  intersectionVehicles[vehicleCount] = NULL;
 
   lock_acquire(locks[vehicleCount]);
   cv_broadcast(intersectionCV, locks[vehicleCount]);
   lock_release(locks[vehicleCount]);
-
-  vehicleCount -= 1;
 
   return;
 

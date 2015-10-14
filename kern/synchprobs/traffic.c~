@@ -431,8 +431,6 @@ kprintf("start before entry, thread_num is: %d\n", (int)thread_num); //LJC
     /* spend some time in the intersection */
     in_intersection();
 
-kprintf("I am ready to exit the intersection");
-
     /* leave the intersection */
     /* here, we are unsetting the global pointer */
     P(mutex);

@@ -44,6 +44,9 @@ typedef struct Vehicles
 /* functions that defined and used internally */
 static bool right_turn(Vehicle *v);
 static void can_enter_intersection(int vehicleCount);
+void intersection_before_entry(Direction origin, Direction destination);
+void intersection_after_exit(Direction origin, Direction destination);
+
 
 /* 
  * The simulation driver will call this function once before starting
@@ -140,32 +143,52 @@ void can_enter_intersection(int vehicleCount) {
 	Because when some thread run the check_constraint function, 
 	other threads within vehicles may not even be initialized !!
   */
+  int safe = 0;
+  while (safe==0) {
     for (int i=0; i<MAX_THREADS; i++) {
-        lock_acquire(locks[vehicleCount-1]);
+kprintf("vehicleCount is: %d\n", vehicleCount);
+        //lock_acquire(locks[vehicleCount-1]); // ERROR to be remember!! 
+/*
+the above lock_acquire will cause deadlock!! each time the for loop runs, it 
+will try to acquire the lock. after a certain number of loop, all current 
+threads will be waiting for the lock and therefore leads to deadlock. s
+*/
         if ((i==vehicleCount-1) || (intersectionVehicles[i] == NULL)) {
+kprintf("c1");
           continue;
         }
     /* no conflict if both vehicles have the same origin */
         if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->origin) {
+kprintf("c2");
           continue;
         }
     /* no conflict if vehicles go in opposite directions */
         if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->destination) &&
         (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount-1]->origin)) {
+kprintf("c3");
           continue;
         }
     /* no conflict if one makes a right turn and 
        the other has a different destination */
         if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount-1])) &&
   (intersectionVehicles[vehicleCount-1]->destination != intersectionVehicles[i]->destination)) {
+kprintf("c4");
           continue;
-        } else {
-          cv_wait(intersectionCV, locks[vehicleCount-1]);
-          lock_release(locks[vehicleCount-1]);
-          return;
+        }         
+        if (i==MAX_THREADS-1) {
+        // when all vehicles passed safety check:
+          safe = 1; // change safe flag to 1 when we check all vehicles
+          break; // break the for loop, when we check all the vehicles
         }
+kprintf("have conflict: put vehicle %d into cv\n", vehicleCount-1);
+        lock_acquire(locks[vehicleCount-1]);
+        cv_wait(intersectionCV, locks[vehicleCount-1]);
+        lock_release(locks[vehicleCount-1]);
+        break; // this break the for loop, and go back to while loop
+        
     }
-    return;
+  }
+  return;
 }
 
 
@@ -175,10 +198,13 @@ intersection_before_entry(Direction origin, Direction destination)
   Vehicle v;
   v.origin = origin;
   v.destination = destination;
+  KASSERT(4 > v.origin);
+  KASSERT(4 > v.destination);
+  KASSERT(v.origin != v.destination);
 
   vehicleCount += 1;
 
-  intersectionVehicles[vehicleCount] = &v;
+  intersectionVehicles[vehicleCount-1] = &v;
   
   can_enter_intersection(vehicleCount);
 
@@ -204,6 +230,7 @@ intersection_after_exit(Direction origin, Direction destination)
   (void) destination;
 
   vehicleCount -= 1;
+kprintf("I am freeing a vehicle!");
   intersectionVehicles[vehicleCount] = NULL;
 
   lock_acquire(locks[vehicleCount]);
