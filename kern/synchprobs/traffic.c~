@@ -234,7 +234,7 @@ right_turn(Vehicle *v) {
 
 void
 check_constraints(int thread_num) {
-kprintf("I am running check_constraints");
+kprintf("Thread %d is running check_constraints \n", thread_num);
   int i;
   KASSERT(thread_num < NumThreads);
   /* compare newly-added vehicle to each other vehicles in in the intersection */
@@ -252,6 +252,7 @@ kprintf("I am running check_constraints");
     /* Houston, we have a problem! */
     /* print info about the two vehicles found to be in conflict,
        then cause a kernel panic */
+kprintf("thread %d violate the constraint with thread %d\n", thread_num, i);
     kprintf("Vehicle A: ");
     print_direction(vehicles[i]->origin);
     kprintf("->");
@@ -264,6 +265,7 @@ kprintf("I am running check_constraints");
     kprintf("\n");
     panic("intersection synchronization constraint violation!\n");
   }
+kprintf("thread %d pass all check_constraint \n", thread_num);
 }
 
 /*
@@ -409,8 +411,9 @@ vehicle_simulation(void * unusedpointer,
        enter the intersection */
     /* we also measure the time spent blocked */
     gettime(&before_sec,&before_nsec);
-kprintf("start before entry, thread_num is: %d\n", (int)thread_num); //LJC
+kprintf("thread: %d is running intersection_before_entry\n", (int)thread_num); //LJC
     intersection_before_entry(v.origin, v.destination);
+kprintf("thread: %d finish intersection_before_entry, now enter intersection\n", (int)thread_num);
     gettime(&after_sec,&after_nsec);
 
     /* enter the intersection */
@@ -431,9 +434,12 @@ kprintf("start before entry, thread_num is: %d\n", (int)thread_num); //LJC
     /* spend some time in the intersection */
     in_intersection();
 
+
+
     /* leave the intersection */
     /* here, we are unsetting the global pointer */
     P(mutex);
+kprintf("thread %d am exiting the intersection\n", (int)thread_num);
     KASSERT(vehicles[thread_num] == &v);
     vehicles[thread_num] = NULL;
     V(mutex);
@@ -525,7 +531,7 @@ traffic_simulation(int nargs,
     if (error) {
       panic("traffic_simulation: thread_fork failed: %s\n", strerror(error));
     }
-kprintf("thread_num is: %d\n", i);  // LJC
+kprintf("successfully initialize thread: %d\n", i);  // LJC
   }
   
   /* wait for all of the vehicle simulations to finish before terminating */  

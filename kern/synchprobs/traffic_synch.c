@@ -33,17 +33,31 @@ typedef struct Vehicles
 {
   Direction origin;
   Direction destination;
+  struct lock* lk; 
 } Vehicle;
 
 //static struct semaphore *intersectionSem;
- static struct cv* intersectionCV;
- static Vehicle* volatile intersectionVehicles[MAX_THREADS];
- static struct lock* volatile locks[MAX_THREADS];
- static volatile int vehicleCount;
+static struct cv* intersectionCV;
+static Vehicle* volatile intersectionVehicles[MAX_THREADS];
+static struct lock* enter_lock;
+static struct lock* exit_lock;
+
+ /*
+the intersectionVehicles list here is functionality similar to the vechiles list
+in traffic.c file. But intersectionVehicles here don't directly related with the
+actual thread. It just serve as an book keeper to see if there is any conflict
+
+therefore in the 'intersection_after_exit' we can just scan the vehicle and remove
+any vehicle that has the origin and destination we want. Although this vehicle may
+not actually created by the right thread, but it doesn't affect our program. 
+
+ */
+ //static struct lock* volatile locks[MAX_THREADS];
+// static volatile int vehicleCount;
 
 /* functions that defined and used internally */
 static bool right_turn(Vehicle *v);
-static void can_enter_intersection(int vehicleCount);
+static void can_enter_intersection(Vehicle* v);
 void intersection_before_entry(Direction origin, Direction destination);
 void intersection_after_exit(Direction origin, Direction destination);
 
@@ -58,26 +72,18 @@ void intersection_after_exit(Direction origin, Direction destination);
 void
 intersection_sync_init(void)
 {
-  /* replace this default implementation with your own implementation */
-
-/*
-  intersectionSem = sem_create("intersectionSem",1);
-  if (intersectionSem == NULL) {
-    panic("could not create intersection semaphore");
-  }
-  return;
-*/
 
   intersectionCV = cv_create("intersectionBusy");
-  vehicleCount = 0;
+  // vehicleCount = 0;
   //locks = kmalloc(sizeof(struct lock *)* MAX_THREADS);
-
+  enter_lock = lock_create("enter_lock");
+  exit_lock = lock_create("exit_lock");
   if (intersectionCV == NULL) {
     panic("Couldn't create intersectionCV");
   }
   for (int i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = (Vehicle * volatile) NULL;
-    locks[i] = lock_create("");
+    //locks[i] = lock_create("");
   }
   return;
 
@@ -103,8 +109,8 @@ intersection_sync_cleanup(void)
 
   for (int i=0; i<MAX_THREADS; i++) {
     intersectionVehicles[i] = NULL;
-    lock_destroy(locks[i]);
-    locks[i] = NULL;
+    //lock_destroy(locks[i]);
+    //locks[i] = NULL;
   }
   return;
 }
@@ -124,6 +130,8 @@ intersection_sync_cleanup(void)
  */
 
 
+
+
 bool
 right_turn(Vehicle *v) {
   KASSERT(v != NULL);
@@ -137,7 +145,7 @@ right_turn(Vehicle *v) {
   }
 }
 
-void can_enter_intersection(int vehicleCount) {
+void can_enter_intersection(Vehicle* v) {
   /*
 	LJC: this check is crucial, especially check vehicles[i]==NULL. 
 	Because when some thread run the check_constraint function, 
@@ -146,48 +154,48 @@ void can_enter_intersection(int vehicleCount) {
   int safe = 0;
   while (safe==0) {
     for (int i=0; i<MAX_THREADS; i++) {
-kprintf("vehicleCount is: %d\n", vehicleCount);
         //lock_acquire(locks[vehicleCount-1]); // ERROR to be remember!! 
 /*
 the above lock_acquire will cause deadlock!! each time the for loop runs, it 
 will try to acquire the lock. after a certain number of loop, all current 
 threads will be waiting for the lock and therefore leads to deadlock. s
 */
-        if ((i==vehicleCount-1) || (intersectionVehicles[i] == NULL)) {
-kprintf("c1");
+        if ((intersectionVehicles[i] == NULL)) {
+//kprintf("c1");
           if (i==MAX_THREADS-1) safe=1;
           continue;
         }
     /* no conflict if both vehicles have the same origin */
-        if (intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->origin) {
-kprintf("c2");
+        if (intersectionVehicles[i]->origin == v->origin) {
+//kprintf("c2");
           if (i==MAX_THREADS-1) safe=1;
           continue;
         }
     /* no conflict if vehicles go in opposite directions */
-        if ((intersectionVehicles[i]->origin == intersectionVehicles[vehicleCount-1]->destination) &&
-        (intersectionVehicles[i]->destination == intersectionVehicles[vehicleCount-1]->origin)) {
-kprintf("c3");
+        if ((intersectionVehicles[i]->origin == v->destination) &&
+        (intersectionVehicles[i]->destination == v->origin)) {
+//kprintf("c3");
           if (i==MAX_THREADS-1) safe=1;
           continue;
         }
     /* no conflict if one makes a right turn and 
        the other has a different destination */
-        if ((right_turn(intersectionVehicles[i]) || right_turn(intersectionVehicles[vehicleCount-1])) &&
-  (intersectionVehicles[vehicleCount-1]->destination != intersectionVehicles[i]->destination)) {
-kprintf("c4");
+        if ((right_turn(intersectionVehicles[i]) || right_turn(v)) &&
+  (v->destination != intersectionVehicles[i]->destination)) {
+//kprintf("c4");
           if (i==MAX_THREADS-1) safe=1;
           continue;
         }         
-kprintf("have conflict: put vehicle %d into cv\n", vehicleCount-1);
-        lock_acquire(locks[vehicleCount-1]);
-
-
+// kprintf("have conflict: put vehicle %d into cv\n", vehicleCount);
+        //lock_acquire(locks[vehicleCount]);
+        //lock_acquire(v->lk);
 // here: should also remove this vehicle from the intersectionVehicles list !!
 // because we are using intersectionVehicles to make judgement !
 // otherwise this will cause deadlock
-        cv_wait(intersectionCV, locks[vehicleCount-1]);
-        lock_release(locks[vehicleCount-1]);
+        //cv_wait(intersectionCV, locks[vehicleCount]);
+        cv_wait(intersectionCV, enter_lock);
+        //lock_release(locks[vehicleCount]);
+        //lock_release(v->lk);
         break; // this break the for loop, and go back to while loop
         
     }
@@ -199,20 +207,41 @@ kprintf("have conflict: put vehicle %d into cv\n", vehicleCount-1);
 void
 intersection_before_entry(Direction origin, Direction destination) 
 {
-  Vehicle v;
-  v.origin = origin;
-  v.destination = destination;
-  KASSERT(4 > v.origin);
-  KASSERT(4 > v.destination);
-  KASSERT(v.origin != v.destination);
+  // this vehicle need to exist after the intersection_before_entry function exit
+  Vehicle* v = kmalloc(sizeof(Vehicle));
+  v->origin = origin;
+  v->destination = destination;
+  v->lk = lock_create("");
+  KASSERT(4 > v->origin);
+  KASSERT(4 > v->destination);
+  KASSERT(v->origin != v->destination);
 
-  vehicleCount += 1;
+  lock_acquire(enter_lock);
+  can_enter_intersection(v);
 
-  intersectionVehicles[vehicleCount-1] = &v; // change this, first check if I can put
-// the vehicle into this list, then add it 
-  
-  can_enter_intersection(vehicleCount);
-// can_enter_intersection(&v)
+//kprintf("finish_can_enter_intersection check, now enter intersection");
+
+  // first find an available position in intersectionVehicles
+  int index = 0;
+  for (int i=0; i<MAX_THREADS; i++) {
+    if (intersectionVehicles[i] == NULL) {
+      index = i;
+      break;
+    }
+  }
+  intersectionVehicles[index] = v;
+
+//kprintf("intersection has those vehicles: \n");
+//for (int j=0; j<MAX_THREADS; j++) {
+//    if (intersectionVehicles[j] != NULL) {
+//        print_direction(intersectionVehicles[j]->origin);
+//        kprintf("->");
+//        print_direction(intersectionVehicles[j]->destination);
+//        kprintf("\n");
+//    }
+//}
+//kprintf("finish printing all vehicles\n");
+  lock_release(enter_lock);
 
 }
 
@@ -232,18 +261,37 @@ intersection_before_entry(Direction origin, Direction destination)
 void
 intersection_after_exit(Direction origin, Direction destination) 
 {
-  (void) origin;
-  (void) destination;
+  lock_acquire(exit_lock);
+  int free_success = 0; // flag to make sure we do find the right vehicle to free
+  // this is wrong !! should not just decrease the count and remove the last vehicle
+  // because the vehicle get free may not be the most recent one !! 
+//kprintf("I am freeing a vehicle!\n");
 
-  vehicleCount -= 1;
-kprintf("I am freeing a vehicle!");
-  intersectionVehicles[vehicleCount] = NULL;
-
-  lock_acquire(locks[vehicleCount]);
-  cv_broadcast(intersectionCV, locks[vehicleCount]);
-  lock_release(locks[vehicleCount]);
+  for (int i=0; i<MAX_THREADS; i++) {
+    if (intersectionVehicles[i] != NULL) {
+        if ((intersectionVehicles[i]->origin == origin) && 
+         (intersectionVehicles[i]->destination == destination)) {
+         //lock_acquire(intersectionVehicles[i]->lk);
+         //lock_release(intersectionVehicles[i]->lk);
+         intersectionVehicles[i] = NULL; // this can be potential probelmatic 
+        // should really make sure this set to NULL tgt with cv_broadcast
+	     free_success = 1;
+//kprintf("at least one such free is success ! \n"); 
+//kprintf("the free_success value is: %d\n", free_success);
+        }
+    }
+  }
+  cv_broadcast(intersectionCV, exit_lock);
+//kprintf("the (again) free_success value is: %d\n", free_success);
+  //KASSERT(free_success == 1); // Q: I still don't understand why this is not right?
+/*
+About cv: thread A may added itself into cv, and wait for another thread B to 
+wake itself up! So thread A will not wake itself
+*/
+  lock_release(exit_lock);
 
   return;
 
 }
+
 
