@@ -51,6 +51,8 @@ therefore in the 'intersection_after_exit' we can just scan the vehicle and remo
 any vehicle that has the origin and destination we want. Although this vehicle may
 not actually created by the right thread, but it doesn't affect our program. 
 
+Update: what I said above is not correct !! it does matter to release the right flag
+otherwise you may incorrectly set the pointer to NULL and cause panic
  */
  //static struct lock* volatile locks[MAX_THREADS];
 // static volatile int vehicleCount;
@@ -69,6 +71,10 @@ void intersection_after_exit(Direction origin, Direction destination);
  * You can use it to initialize synchronization and other variables.
  * 
  */
+
+ 
+
+
 void
 intersection_sync_init(void)
 {
@@ -217,6 +223,7 @@ intersection_before_entry(Direction origin, Direction destination)
   KASSERT(v->origin != v->destination);
 
   lock_acquire(enter_lock);
+  lock_acquire(v->lk);
   can_enter_intersection(v);
 
 //kprintf("finish_can_enter_intersection check, now enter intersection");
@@ -270,11 +277,10 @@ intersection_after_exit(Direction origin, Direction destination)
   for (int i=0; i<MAX_THREADS; i++) {
     if (intersectionVehicles[i] != NULL) {
         if ((intersectionVehicles[i]->origin == origin) && 
-         (intersectionVehicles[i]->destination == destination)) {
-         //lock_acquire(intersectionVehicles[i]->lk);
-         //lock_release(intersectionVehicles[i]->lk);
-         intersectionVehicles[i] = NULL; // this can be potential probelmatic 
-        // should really make sure this set to NULL tgt with cv_broadcast
+         (intersectionVehicles[i]->destination == destination) &&
+         (lock_do_i_hold(intersectionVehicles[i]->lk))) {
+         lock_release(intersectionVehicles[i]->lk);
+         intersectionVehicles[i] = NULL; 
 	     free_success = 1;
 //kprintf("at least one such free is success ! \n"); 
 //kprintf("the free_success value is: %d\n", free_success);
@@ -283,7 +289,7 @@ intersection_after_exit(Direction origin, Direction destination)
   }
   cv_broadcast(intersectionCV, exit_lock);
 //kprintf("the (again) free_success value is: %d\n", free_success);
-  //KASSERT(free_success == 1);
+  //KASSERT(free_success == 1); // Q: I still don't understand why this is not right?
 /*
 About cv: thread A may added itself into cv, and wait for another thread B to 
 wake itself up! So thread A will not wake itself
