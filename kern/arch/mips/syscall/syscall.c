@@ -129,6 +129,9 @@ syscall(struct trapframe *tf)
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
 	  break;
+	case SYS_fork:
+	  err = sys_fork(tf, (pid_t *) &retval);
+	  break;
 #endif // UW
 
 	    /* Add stuff here */
@@ -177,7 +180,18 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(void *tf, unsigned long data2)
 {
-	(void)tf;
+	//L: make tf has type void* to compatible with thread_fork's signature
+	(void) data2;
+	
+	struct trapframe *tmp_tf = tf;
+	struct trapframe copy_tf = *tmp_tf; // make a copy of the trapframe
+		//L: is it make a deep copy ??
+
+	copy_tf.tf_v0 = 0; // return value
+	copy_tf.tf_a3 = 0; // error code
+	copy_tf.tf_epc += 4; // advance PC to avoid stuck at fork
+
+	mips_usermode(&copy_tf);
 }

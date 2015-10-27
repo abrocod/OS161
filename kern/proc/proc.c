@@ -50,6 +50,7 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#include <array.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -69,6 +70,13 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
+pid_t current_pid = 0;
+
+pid_t get_pid(void);
+
+pid_t get_pid() {
+    return current_pid ++;
+};
 
 
 /*
@@ -93,9 +101,6 @@ proc_create(const char *name)
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
 
-    // add itself to proc_list;
-    array_add(proc_list, proc, NULL);
-
 	/* VM fields */
 	proc->p_addrspace = NULL;
 
@@ -106,13 +111,22 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 
+	// A2: 
     proc->pid = get_pid();
 
-	proc->p_children = array_create();
+	proc->p_children = *( array_create() );
 	array_init(&proc->p_children); 
 
     proc->p_exited = false;
     proc->p_exit_code = 0;
+
+    // add itself to proc_list;
+    array_add(proc_list, proc, NULL);
+
+    proc->p_exit_lock = lock_create("p_exit_lock");	
+	proc->p_hold_lock = lock_create("p_hold_lock");
+	proc->p_hold_cv = cv_create("p_hold_cv");
+
 	return proc;
 }
 
@@ -178,6 +192,9 @@ proc_destroy(struct proc *proc)
 
     // A2:
     array_cleanup(&proc->p_children);
+    lock_destroy(proc->p_exit_lock);
+	lock_destroy(proc->p_hold_lock);
+	cv_destroy(proc->p_hold_cv);
 
 	kfree(proc->p_name);
 	kfree(proc);
@@ -383,6 +400,4 @@ curproc_setas(struct addrspace *newas)
 }
 
 
-pid_t get_pid() {
-    return current_pid ++;
-};
+

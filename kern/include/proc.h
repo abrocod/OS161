@@ -69,11 +69,16 @@ struct proc {
 #endif
 
 	/* add more material here as needed */
-
+    // A2:
     pid_t pid;
     struct array p_children;
     bool p_exited;
     int p_exit_code;
+
+    struct lock *p_exit_lock;     
+    struct lock *p_hold_lock;    
+    struct cv *p_hold_cv;     
+
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
@@ -84,10 +89,13 @@ extern struct proc *kproc;
 extern struct semaphore *no_proc_sem;
 #endif // UW
 
+// global proc_list used to keep all active process
 struct array *proc_list;
 
-// PIDs will be > 0
-pid_t current_pid = 0;
+
+
+
+/* ----------- functions ------------- */
 
 /* Call once during system startup to allocate data structures. */
 void proc_bootstrap(void);

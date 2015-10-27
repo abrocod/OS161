@@ -105,6 +105,8 @@ boot(void)
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
+	DEBUG(DB_SYSCALL, "At main.c: kernel bootup");
+
 	/* Early initialization. */
 	ram_bootstrap();
 	proc_bootstrap();
@@ -129,7 +131,7 @@ boot(void)
 	/* Default bootfs - but ignore failure, in case emu0 doesn't exist */
 	vfs_setbootfs("emu0");
 
-
+	DEBUG(DB_SYSCALL, "At main.c: kernel bootup success");
 	/*
 	 * Make sure various things aren't screwed up.
 	 */
@@ -207,6 +209,7 @@ kmain(char *arguments)
 {
 	boot();
 
+	DEBUG(DB_SYSCALL, "ready to enter menu");
 	menu(arguments);
 
 	/* Should not get here */
