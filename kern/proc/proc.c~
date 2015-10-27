@@ -94,7 +94,7 @@ proc_create(const char *name)
 	spinlock_init(&proc->p_lock);
 
     // add itself to proc_list;
-    array_add(proc_list, proc, NULL);
+    
 
 	/* VM fields */
 	proc->p_addrspace = NULL;

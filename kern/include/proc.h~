@@ -84,11 +84,6 @@ extern struct proc *kproc;
 extern struct semaphore *no_proc_sem;
 #endif // UW
 
-struct array *proc_list;
-
-// PIDs will be > 0
-pid_t current_pid = 0;
-
 /* Call once during system startup to allocate data structures. */
 void proc_bootstrap(void);
 
