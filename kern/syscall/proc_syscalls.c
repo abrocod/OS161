@@ -29,7 +29,7 @@ void sys__exit(int exitcode) {
 
   KASSERT(curproc->p_addrspace != NULL);
 
-  // remove attached child process, and allow them to exit
+  //remove attached child process, and allow them to exit
   for (unsigned int i=0; i <array_num(&p->p_children); i++) {
     struct proc *child = array_get(&p->p_children, i);
     lock_release(child->p_exit_lock);
@@ -72,9 +72,9 @@ void sys__exit(int exitcode) {
 int
 sys_getpid(pid_t *retval)
 {
-  /* for now, this is just a stub that always returns a PID of 1 */
-  /* you need to fix this to make it work properly */
   *retval = curproc->pid;
+  DEBUG(DB_SYSCALL,"At sys_getpid: the pid is (%d)\n", *retval);
+  //*retval = 0;
   return(0);
 }
 
@@ -123,6 +123,7 @@ sys_waitpid(pid_t pid,
   lock_release(wait_proc->p_hold_lock);
 
   exitstatus = wait_proc->p_exit_code;
+  exitstatus = 0;
   result = copyout((void *)&exitstatus,status,sizeof(int));
 
   if (result) {

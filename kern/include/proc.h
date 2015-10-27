@@ -93,8 +93,6 @@ extern struct semaphore *no_proc_sem;
 struct array *proc_list;
 
 
-
-
 /* ----------- functions ------------- */
 
 /* Call once during system startup to allocate data structures. */

@@ -185,9 +185,11 @@ enter_forked_process(void *tf, unsigned long data2)
 	//L: make tf has type void* to compatible with thread_fork's signature
 	(void) data2;
 	
-	struct trapframe *tmp_tf = tf;
+	struct trapframe *tmp_tf = tf; // because I cannot dereference a void pointer
 	struct trapframe copy_tf = *tmp_tf; // make a copy of the trapframe
 		//L: is it make a deep copy ??
+	kfree(tf);
+	kfree(tmp_tf);
 
 	copy_tf.tf_v0 = 0; // return value
 	copy_tf.tf_a3 = 0; // error code

@@ -75,7 +75,7 @@ pid_t current_pid = 0;
 pid_t get_pid(void);
 
 pid_t get_pid() {
-    return current_pid ++;
+    return current_pid++;
 };
 
 
@@ -120,8 +120,16 @@ proc_create(const char *name)
     proc->p_exited = false;
     proc->p_exit_code = 0;
 
-    // add itself to proc_list;
-    array_add(proc_list, proc, NULL);
+    //add itself to proc_list;
+    if (proc_list == NULL) {
+  		DEBUG(DB_SYSCALL, "At proc_create: prepare to create proc_list and add proc\n");
+    	proc_list = array_create();
+		array_init(proc_list);
+    	array_add(proc_list, proc, NULL);
+	} else {
+		DEBUG(DB_SYSCALL, "At proc_create: add new proc to proc_list\n");
+		array_add(proc_list, proc, NULL);
+	}
 
     proc->p_exit_lock = lock_create("p_exit_lock");	
 	proc->p_hold_lock = lock_create("p_hold_lock");
@@ -238,10 +246,6 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
-
-    // A2: 
-    proc_list = array_create();
-	array_init(proc_list);
 }
 
 /*
