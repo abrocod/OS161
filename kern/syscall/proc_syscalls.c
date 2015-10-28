@@ -41,13 +41,20 @@ void sys__exit(int exitcode) {
   KASSERT(curproc->p_addrspace != NULL);
 
   //remove attached child process, and allow them to exit
-  for (unsigned int i=0; i <array_num(&p->p_children); i++) {
-    struct proc *child = array_get(&p->p_children, i);
-    lock_release(child->p_exit_lock);
-    array_remove(&p->p_children, i);
-  }
+  //for (unsigned int i=0; i <array_num(&p->p_children); i++) {
+   // struct proc *child = array_get(&p->p_children, i);
+   // lock_release(child->p_exit_lock);
+    //array_remove(&p->p_children, i);
+  //}
   //array_cleanup(&p->p_children);
   
+  // remove children from backward: 
+  // because of unsigned int, so we have to use i>0 as judge criteria:
+  for (unsigned int i=array_num(&p->p_children); i>0; i--) {
+    struct proc *child = array_get(&p->p_children, i-1);
+    lock_release(child->p_exit_lock);
+    array_remove(&p->p_children,i-1);
+  }
   DEBUG(DB_SYSCALL_E, "sys_exit: # of children remains after remove loop is (%d)\n", array_num(&p->p_children) );
   KASSERT(array_num(&p->p_children) == 0);
 
@@ -131,17 +138,15 @@ sys_waitpid(pid_t pid,
     }
   }
 
+  if (options != 0) {
+    return(EINVAL); // The options argument requested invalid or unsupported options.
+  }
   if (wait_proc == NULL) {
     DEBUG(DB_SYSCALL_E,"sys_waitpid Fail: The pid argument named a nonexistent process.: (%d)\n", pid);
     return ESRCH; // The pid argument named a nonexistent process.
   }
-
   if (wait_proc == curproc) {
     return ECHILD; //The pid argument named a process that the current process was not interested in or that has not yet exited.
-  }
-
-  if (options != 0) {
-    return(EINVAL); // The options argument requested invalid or unsupported options.
   }
   
   lock_acquire(wait_proc->p_hold_lock);

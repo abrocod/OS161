@@ -20,9 +20,12 @@
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
 
-static struct lock *sys_exit_lock;
+//static struct lock *sys_exit_lock;
 
 void sys__exit(int exitcode) {
+
+  int ss = splhigh();
+
   DEBUG(DB_SYSCALL_E, "sys_exit: start to run sys_exit for proc (%d)\n", curproc->pid);
   struct addrspace *as;
   struct proc *p = curproc;
@@ -30,18 +33,26 @@ void sys__exit(int exitcode) {
      an unused variable */
 
   //DEBUG(DB_SYSCALL_E,"Syscall: _exit(%d)\n",exitcode);
-  if (sys_exit_lock == NULL) {
-    sys_exit_lock = lock_create("sys_exit_lock");
-  }
-  lock_acquire(sys_exit_lock);
+  //if (sys_exit_lock == NULL) {
+  //  sys_exit_lock = lock_create("sys_exit_lock");
+  //}
+  //lock_acquire(sys_exit_lock);
 
   KASSERT(curproc->p_addrspace != NULL);
 
   //remove attached child process, and allow them to exit
-  for (unsigned int i=0; i <array_num(&p->p_children); i++) {
-    struct proc *child = array_get(&p->p_children, i);
+  //for (unsigned int i=0; i <array_num(&p->p_children); i++) {
+   // struct proc *child = array_get(&p->p_children, i);
+   // lock_release(child->p_exit_lock);
+    //array_remove(&p->p_children, i);
+  //}
+  //array_cleanup(&p->p_children);
+  
+  // remove children from backward: 
+  for (unsigned int i=array_num(&p->p_children); i>0; i--) {
+    struct proc *child = array_get(&p->p_children, i-1);
     lock_release(child->p_exit_lock);
-    array_remove(&p->p_children, i);
+    array_remove(&p->p_children,i-1);
   }
   DEBUG(DB_SYSCALL_E, "sys_exit: # of children remains after remove loop is (%d)\n", array_num(&p->p_children) );
   KASSERT(array_num(&p->p_children) == 0);
@@ -73,8 +84,10 @@ void sys__exit(int exitcode) {
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
 
-  lock_release(sys_exit_lock);
+  //lock_release(sys_exit_lock);
   proc_destroy(p);
+
+  splx(ss);
   
   thread_exit();
   /* thread_exit() does not return, so we should never get here */
@@ -124,17 +137,15 @@ sys_waitpid(pid_t pid,
     }
   }
 
+  if (options != 0) {
+    return(EINVAL); // The options argument requested invalid or unsupported options.
+  }
   if (wait_proc == NULL) {
     DEBUG(DB_SYSCALL_E,"sys_waitpid Fail: The pid argument named a nonexistent process.: (%d)\n", pid);
     return ESRCH; // The pid argument named a nonexistent process.
   }
-
   if (wait_proc == curproc) {
     return ECHILD; //The pid argument named a process that the current process was not interested in or that has not yet exited.
-  }
-
-  if (options != 0) {
-    return(EINVAL); // The options argument requested invalid or unsupported options.
   }
   
   lock_acquire(wait_proc->p_hold_lock);
@@ -162,7 +173,7 @@ sys_fork(struct trapframe *tf,
           pid_t *retval) 
 {
   DEBUG(DB_SYSCALL_E,"\nStart sys_fork: called by proc with pid: (%d)\n", curproc->pid);
-  //int s = splhigh();
+  //int ss = splhigh();
   struct proc *cur_proc = curproc;
 
   struct proc *new_proc = proc_create_runprogram(cur_proc->p_name);
@@ -202,7 +213,7 @@ sys_fork(struct trapframe *tf,
   lock_acquire(new_proc->p_exit_lock);
 
   *retval = new_proc->pid;
-  //splx(s);
+  //splx(ss);
 
   return 0;
 }
