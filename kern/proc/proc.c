@@ -79,18 +79,6 @@ pid_t get_pid() {
 };
 
 
-unsigned proc_list_find_index(struct array *proc_array, pid_t pid) {
-    unsigned low = 0;
-    unsigned high = array_num(proc_array)-1;
-
-    while (high >= low) {
-        unsigned probe = (high + low)/2;
-        struct proc *p
-
-
-
-
-
 
 
 /*
@@ -126,6 +114,30 @@ proc_create(const char *name)
 #endif // UW
 
 	// A2: 
+    proc->p_exit_lock = lock_create("p_exit_lock");
+    if (proc->p_exit_lock == NULL) {
+    	kfree(proc->p_name);
+    	kfree(proc);
+    	return NULL;
+    }
+    //KASSERT(proc->p_exit_lock != NULL);	
+	proc->p_hold_lock = lock_create("p_hold_lock");
+	if (proc->p_hold_lock == NULL) {
+		lock_destroy(proc->p_exit_lock);
+		kfree(proc->p_name);
+		kfree(proc);
+	}
+    //KASSERT(proc->p_hold_lock != NULL);	
+	proc->p_hold_cv = cv_create("p_hold_cv");
+    KASSERT(proc->p_hold_cv != NULL);	
+    proc->p_sys_waitpid_lock = lock_create("p_sys_waitpid_lock");
+    if (proc->p_sys_waitpid_lock == NULL) {
+    	lock_destroy(proc->p_exit_lock);
+    	lock_destroy(proc->p_hold_lock);
+    	kfree(proc->p_name);
+    	kfree(proc);
+    }
+
     proc->pid = get_pid();
     DEBUG(DB_SYSCALL_E,"\nproc_create: new proc's pid is: (%d)\n", proc->pid);
 
@@ -135,7 +147,7 @@ proc_create(const char *name)
     proc->p_exited = false;
     proc->p_exit_code = 0;
 
-    //add itself to proc_list;
+    //add itself to global proc_list;
     if (proc_list == NULL) {
   		//DEBUG(DB_SYSCALL_E, "At proc_create: prepare to create proc_list and add proc\n");
     	proc_list = array_create();
@@ -145,14 +157,6 @@ proc_create(const char *name)
 		//DEBUG(DB_SYSCALL_E, "At proc_create: add new proc to proc_list\n");
 		array_add(proc_list, proc, NULL);
 	}
-
-    proc->p_exit_lock = lock_create("p_exit_lock");
-    KASSERT(proc->p_exit_lock != NULL);	
-	proc->p_hold_lock = lock_create("p_hold_lock");
-    KASSERT(proc->p_hold_lock != NULL);	
-	proc->p_hold_cv = cv_create("p_hold_cv");
-    KASSERT(proc->p_hold_cv != NULL);	
-    proc->p_sys_waitpid_lock = lock_create("p_sys_waitpid_lock");
 	return proc;
 }
 

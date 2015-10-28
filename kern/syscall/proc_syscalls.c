@@ -23,6 +23,9 @@
 //static struct lock *sys_exit_lock;
 
 void sys__exit(int exitcode) {
+
+  int ss = splhigh();
+
   DEBUG(DB_SYSCALL_E, "sys_exit: start to run sys_exit for proc (%d)\n", curproc->pid);
   struct addrspace *as;
   struct proc *p = curproc;
@@ -43,6 +46,8 @@ void sys__exit(int exitcode) {
     lock_release(child->p_exit_lock);
     array_remove(&p->p_children, i);
   }
+  //array_cleanup(&p->p_children);
+  
   DEBUG(DB_SYSCALL_E, "sys_exit: # of children remains after remove loop is (%d)\n", array_num(&p->p_children) );
   KASSERT(array_num(&p->p_children) == 0);
 
@@ -75,6 +80,8 @@ void sys__exit(int exitcode) {
 
   //lock_release(sys_exit_lock);
   proc_destroy(p);
+
+  splx(ss);
   
   thread_exit();
   /* thread_exit() does not return, so we should never get here */
@@ -162,7 +169,7 @@ sys_fork(struct trapframe *tf,
           pid_t *retval) 
 {
   DEBUG(DB_SYSCALL_E,"\nStart sys_fork: called by proc with pid: (%d)\n", curproc->pid);
-  //int s = splhigh();
+  //int ss = splhigh();
   struct proc *cur_proc = curproc;
 
   struct proc *new_proc = proc_create_runprogram(cur_proc->p_name);
@@ -202,7 +209,7 @@ sys_fork(struct trapframe *tf,
   lock_acquire(new_proc->p_exit_lock);
 
   *retval = new_proc->pid;
-  //splx(s);
+  //splx(ss);
 
   return 0;
 }

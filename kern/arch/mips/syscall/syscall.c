@@ -184,12 +184,10 @@ enter_forked_process(void *tf, unsigned long data2)
 {
     DEBUG(DB_SYSCALL, "sys_fork: enter_forked_process: beginning\n");
 	//L: make tf has type void* to compatible with thread_fork's signature
-	(void) data2;
 	
 	struct trapframe *tmp_tf = tf; // because I cannot dereference a void pointer
 	struct trapframe copy_tf = *tmp_tf; // make a copy of the trapframe
 		//L: is it make a deep copy ??
-	//kfree(tf);
 	kfree(tmp_tf);
 
     DEBUG(DB_SYSCALL, "sys_fork: enter_forked_process: finish copy trapframe\n");
@@ -198,8 +196,7 @@ enter_forked_process(void *tf, unsigned long data2)
 	copy_tf.tf_a3 = 0; // error code
 	copy_tf.tf_epc += 4; // advance PC to avoid stuck at fork
 
-    KASSERT(curthread->t_curspl == 0);
-    KASSERT(curthread->t_iplhigh_count == 0);
+    (void) data2;
 
 	mips_usermode(&copy_tf);
 }

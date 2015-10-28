@@ -175,11 +175,10 @@ lock_create(const char *name)
 		return NULL;
 	}
 
-	spinlock_init(&lock->lock_lock);
-
+	spinlock_init(&lock->lock_slock);
 	lock->t = NULL;
+    lock->islocked = false;
 	
-        
     return lock;
 }
 
@@ -187,11 +186,13 @@ void
 lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
+        KASSERT(!lock->islocked);
+        KASSERT(lock->t == NULL);
 
         // add stuff here as needed
         
         //KASSERT(lock->t == NULL);
-        spinlock_cleanup(&lock->lock_lock);
+        spinlock_cleanup(&lock->lock_slock);
         wchan_destroy(lock->lock_wchan);
         kfree(lock->lk_name);
         kfree(lock);
@@ -205,20 +206,22 @@ lock_acquire(struct lock *lock)
         KASSERT(lock != NULL);
         KASSERT(curthread->t_in_interrupt == false);
 
-        spinlock_acquire(&lock->lock_lock);
+        spinlock_acquire(&lock->lock_slock);
         // if this lock is already obtained by other thread:
-        while(lock->t != NULL) {
+        while(lock->islocked) {
             // why need to release and then acquire the spinlock???
             wchan_lock(lock->lock_wchan);
-            spinlock_release(&lock->lock_lock);
+            spinlock_release(&lock->lock_slock);
             wchan_sleep(lock->lock_wchan);
-            spinlock_acquire(&lock->lock_lock);
+            spinlock_acquire(&lock->lock_slock);
         }
 
         // if lock is not obtained by any other thread:
         KASSERT(lock->t == NULL);
+        KASSERT(lock->islocked == false);
+        lock->islocked = true;
         lock->t = curthread;
-        spinlock_release(&lock->lock_lock);
+        spinlock_release(&lock->lock_slock);
         
 }
 
@@ -226,12 +229,15 @@ void
 lock_release(struct lock *lock)
 {
         // Write this
-
-        spinlock_acquire(&lock->lock_lock);
         KASSERT(lock_do_i_hold(lock)); // make sure the same thread release the lock
+
+        spinlock_acquire(&lock->lock_slock);
+
         lock->t = NULL;
+        lock->islocked = false;
         wchan_wakeone(lock->lock_wchan);
-        spinlock_release(&lock->lock_lock);
+
+        spinlock_release(&lock->lock_slock);
 }
 
 bool
@@ -299,7 +305,7 @@ cv_wait(struct cv *cv, struct lock *lock)
 
         KASSERT(cv != NULL);
         KASSERT(lock != NULL);
-        //KASSERT(lock_do_i_hold(lock)); // what if I drop this??
+        KASSERT(lock_do_i_hold(lock)); // what if I drop this??
         
         // no need to have spinlock protection
         wchan_lock(cv->cv_wchan);
@@ -315,7 +321,8 @@ void
 cv_signal(struct cv *cv, struct lock *lock)
 {
         // Write this
-        (void) lock;
+        KASSERT(cv != NULL);
+        KASSERT(lock != NULL);
 	    //KASSERT(lock_do_i_hold(lock));
         wchan_wakeone(cv->cv_wchan);
 }
@@ -324,7 +331,8 @@ void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
 	   // Write this
-        (void) lock;
+        KASSERT(cv != NULL);
+        KASSERT(lock != NULL);
         //KASSERT(lock_do_i_hold(lock));
         wchan_wakeall(cv->cv_wchan);
 }
