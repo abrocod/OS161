@@ -20,7 +20,7 @@
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
 
-//static struct lock *sys_exit_lock;
+static struct lock *sys_exit_lock;
 
 void sys__exit(int exitcode) {
   DEBUG(DB_SYSCALL_E, "sys_exit: start to run sys_exit for proc (%d)\n", curproc->pid);
@@ -30,10 +30,10 @@ void sys__exit(int exitcode) {
      an unused variable */
 
   //DEBUG(DB_SYSCALL_E,"Syscall: _exit(%d)\n",exitcode);
-  //if (sys_exit_lock == NULL) {
-  //  sys_exit_lock = lock_create("sys_exit_lock");
-  //}
-  //lock_acquire(sys_exit_lock);
+  if (sys_exit_lock == NULL) {
+    sys_exit_lock = lock_create("sys_exit_lock");
+  }
+  lock_acquire(sys_exit_lock);
 
   KASSERT(curproc->p_addrspace != NULL);
 
@@ -73,7 +73,7 @@ void sys__exit(int exitcode) {
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
 
-  //lock_release(sys_exit_lock);
+  lock_release(sys_exit_lock);
   proc_destroy(p);
   
   thread_exit();

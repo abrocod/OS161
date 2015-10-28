@@ -76,7 +76,8 @@ struct proc {
     int p_exit_code;
 
     struct lock *p_exit_lock;     
-    struct lock *p_hold_lock;    
+    struct lock *p_hold_lock;  
+    struct lock *p_sys_waitpid_lock; //use within sys_waitpid function 
     struct cv *p_hold_cv;     
 
 };

@@ -105,7 +105,7 @@ boot(void)
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
-	DEBUG(DB_SYSCALL, "At main.c: kernel bootup\n");
+	DEBUG(DB_SYSCALL_E, "At main.c: kernel bootup\n");
 
 	/* Early initialization. */
 	ram_bootstrap();

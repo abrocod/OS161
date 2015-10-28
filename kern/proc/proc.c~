@@ -50,6 +50,7 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#include <array.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -69,6 +70,13 @@ static struct semaphore *proc_count_mutex;
 struct semaphore *no_proc_sem;   
 #endif  // UW
 
+pid_t current_pid = 1; // pid should start from 1 !
+
+pid_t get_pid(void);
+
+pid_t get_pid() {
+    return current_pid++;
+};
 
 
 /*
@@ -90,11 +98,8 @@ proc_create(const char *name)
 		return NULL;
 	}
 
-	threadarray_init(&proc->p_threads);
-	spinlock_init(&proc->p_lock);
-
-    // add itself to proc_list;
-    
+	threadarray_init(&(proc->p_threads));
+	spinlock_init(&(proc->p_lock));
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
@@ -106,13 +111,34 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 
+	// A2: 
     proc->pid = get_pid();
+    DEBUG(DB_SYSCALL_E,"\nproc_create: new proc's pid is: (%d)\n", proc->pid);
 
-	proc->p_children = array_create();
-	array_init(&proc->p_children); 
+	proc->p_children = *( array_create() );
+	array_init(&(proc->p_children)); 
 
     proc->p_exited = false;
     proc->p_exit_code = 0;
+
+    //add itself to proc_list;
+    if (proc_list == NULL) {
+  		//DEBUG(DB_SYSCALL_E, "At proc_create: prepare to create proc_list and add proc\n");
+    	proc_list = array_create();
+		array_init(proc_list);
+    	array_add(proc_list, proc, NULL);
+	} else {
+		//DEBUG(DB_SYSCALL_E, "At proc_create: add new proc to proc_list\n");
+		array_add(proc_list, proc, NULL);
+	}
+
+    proc->p_exit_lock = lock_create("p_exit_lock");
+    KASSERT(proc->p_exit_lock != NULL);	
+	proc->p_hold_lock = lock_create("p_hold_lock");
+    KASSERT(proc->p_hold_lock != NULL);	
+	proc->p_hold_cv = cv_create("p_hold_cv");
+    KASSERT(proc->p_hold_cv != NULL);	
+    proc->p_sys_waitpid_lock = lock_create("p_sys_waitpid_lock");
 	return proc;
 }
 
@@ -131,8 +157,25 @@ proc_destroy(struct proc *proc)
          * from the process.
 	 */
 
+    DEBUG(DB_SYSCALL_E, "At proc_destroy: start to destroy proc_pid: (%d)\n", proc->pid);
+
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
+
+    // remove this proc from global proc_list: 
+    int num_before_remove = array_num(proc_list);
+    for (unsigned int i=0; i <array_num(proc_list); i++) {
+        struct proc *temp_proc = array_get(proc_list, i);
+        if (temp_proc->pid == proc->pid) {
+            array_remove(proc_list, i);
+        }
+    }
+    int num_after_remove = array_num(proc_list);
+    KASSERT(num_after_remove == --num_before_remove);
+    if (num_after_remove == 0) {
+        array_cleanup(proc_list);
+        array_destroy(proc_list);
+    }
 
 	/*
 	 * We don't take p_lock in here because we must have the only
@@ -173,11 +216,15 @@ proc_destroy(struct proc *proc)
 	}
 #endif // UW
 
-	threadarray_cleanup(&proc->p_threads);
-	spinlock_cleanup(&proc->p_lock);
+	threadarray_cleanup(&(proc->p_threads));
+	spinlock_cleanup(&(proc->p_lock));
 
     // A2:
-    array_cleanup(&proc->p_children);
+    array_cleanup(&(proc->p_children));
+    lock_destroy(proc->p_exit_lock);
+	lock_destroy(proc->p_hold_lock);
+	cv_destroy(proc->p_hold_cv);
+    lock_destroy(proc->p_sys_waitpid_lock);
 
 	kfree(proc->p_name);
 	kfree(proc);
@@ -221,10 +268,6 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
-
-    // A2: 
-    proc_list = array_create();
-	array_init(proc_list);
 }
 
 /*
@@ -383,6 +426,4 @@ curproc_setas(struct addrspace *newas)
 }
 
 
-pid_t get_pid() {
-    return current_pid ++;
-};
+

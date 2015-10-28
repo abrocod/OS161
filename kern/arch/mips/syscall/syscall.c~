@@ -198,8 +198,5 @@ enter_forked_process(void *tf, unsigned long data2)
 	copy_tf.tf_a3 = 0; // error code
 	copy_tf.tf_epc += 4; // advance PC to avoid stuck at fork
 
-    KASSERT(curthread->t_curspl == 0);
-    KASSERT(curthread->t_iplhigh_count == 0);
-
 	mips_usermode(&copy_tf);
 }
