@@ -89,7 +89,8 @@
 #define DB_NETFS       0x0400
 #define DB_KMALLOC     0x0800
 #define DB_SYNCPROB    0x1000
-#define DB_SYSCALL_E   0x1001
+#define DB_SYSCALL_E   0x1001 //L: added
+#define DB_STUDY       0x1002 //L: added
 
 extern uint32_t dbflags;
 

@@ -75,7 +75,37 @@ pid_t current_pid = 1; // pid should start from 1 !
 pid_t get_pid(void);
 
 pid_t get_pid() {
-    return current_pid++;
+    //return current_pid++;
+
+  	// a silly way of assign the smallest available pid without touch the rest of code
+
+  	if (proc_list == NULL) return 1; // pid start from 1
+
+  	int max_pid = 0;
+  	for (unsigned int i=0; i<array_num(proc_list); i++) {
+  		struct proc* temp_proc = array_get(proc_list, i);
+  		if (max_pid < temp_proc->pid) {
+  			max_pid = temp_proc->pid;
+  		}
+  	}
+  	// create a new list (max_pid_list) with len=max_pid, and initialize to 0
+  	char max_pid_list[max_pid];
+  	for (int i=0; i<max_pid; i++) {
+  		max_pid_list[i] = 0;
+  	}
+  	// mark spot with exiting proc with 1
+  	// don't forget pid start from 1
+  	for (unsigned int i=0; i<array_num(proc_list); i++) {
+  		struct proc* temp_proc = array_get(proc_list, i);
+  		max_pid_list[temp_proc->pid-1] = 1;
+  	}
+  	// search empty spot on max_pid_list
+  	for (int j=0; j<max_pid; j++) {
+  		if (max_pid_list[j] == 0) { // if there is empty spot in the list
+  			return j+1;
+  		}
+  	}
+  	return max_pid+1; // if there is no empty spot in list
 };
 
 
@@ -138,11 +168,11 @@ proc_create(const char *name)
     	kfree(proc);
     }
 
-    proc->pid = get_pid();
-    DEBUG(DB_SYSCALL_E,"\nproc_create: new proc's pid is: (%d)\n", proc->pid);
-
 	proc->p_children = *( array_create() );
 	array_init(&(proc->p_children)); 
+
+	proc->pid = get_pid(); 
+    DEBUG(DB_SYSCALL_E,"\nproc_create: new proc's pid is: (%d)\n", proc->pid);
 
     proc->p_exited = false;
     proc->p_exit_code = 0;
@@ -157,6 +187,7 @@ proc_create(const char *name)
 		//DEBUG(DB_SYSCALL_E, "At proc_create: add new proc to proc_list\n");
 		array_add(proc_list, proc, NULL);
 	}
+
 	return proc;
 }
 

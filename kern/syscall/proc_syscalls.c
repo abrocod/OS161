@@ -158,7 +158,12 @@ sys_waitpid(pid_t pid,
   exitstatus = wait_proc->p_exit_code;
   //exitstatus = 0;
   result = copyout((void *)&exitstatus,status,sizeof(int));
-
+  /*
+    L: the exit_code will take effect from here: 
+    we the the p_exit_code form the proc that we wait
+    copy it into the memory location points by status. 
+    status is a pointer pass into our function from syscall
+  */
   if (result) {
     return(result);
   }
