@@ -232,14 +232,8 @@ sys_fork(struct trapframe *tf,
 
 // A2b:
 int sys_execv(char *program/*, char **args*/, int32_t *retval) {
-  // int err = runprogram(program/*, args*/);
-  // // Should not return, this implies an error
-  // *retval = err;
-  // return 1;
 
-  // TO DO TMRW: put the runprogram code here, do some modification, and push to server
-  // call it the complete of basic part a2b
-
+//  TODO: consider to merge sys_execv with runprogram to avoid duplication
   struct addrspace *as;
   struct vnode *v;
   vaddr_t entrypoint, stackptr;

@@ -79,19 +79,6 @@ runprogram(char *progname)
 	curproc_setas(as);
 	as_activate();
 
-	// A2b: 
-	// if there exists an old as, deactivate it and delete it
-	// if (curproc_getas() != NULL) {
-	// 	as_deactivate();
-	// }
-
-	// // destroy the old address space and activate the new create one
-	// struct addrspace * oldas = curproc_setas(as); 
-	// if (oldas != NULL) {
-	// 	as_destroy(oldas);
-	// }
-	// as_activate();
-
 
 
 	/* Load the executable. */
