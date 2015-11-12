@@ -45,14 +45,19 @@
 #include <syscall.h>
 #include <test.h>
 
+#include <limits.h> // L: added
+#include <vm.h> // L: added
+#include <vfs.h> //L: added
+#include <copyinout.h> //L: added
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
-int
-runprogram(char *progname)
+//int
+//runprogram(char *progname)
+int runprogram(char *progname, char **kernel_args, int argc) 
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -99,10 +104,77 @@ runprogram(char *progname)
 		return result;
 	}
 
+
+
+
+	// added for A2b: 
+
+	DEBUG(DB_SYSCALL_E, "runprogram: parpare to copy arguments into user space\n ");
+	// newargs, in case args isn't defined
+	char *empty_args[1];
+	empty_args[0] = NULL;
+	if (kernel_args == NULL) {
+		kernel_args = empty_args;
+	}
+
+  int args_total_len = 0;
+
+  for (int i = 0; i < argc; i++) {
+    int arglen = strlen(kernel_args[i]);
+    args_total_len += arglen + 1; // +1 for \0
+  } 
+  if (args_total_len > ARG_MAX) {
+    return E2BIG;
+  }
+
+  // compute the size needed for keeping user program's argv 
+  // including offset and argv_value
+  int offset_mem = align_memory(argc + 1, sizeof(char **));
+  int argv_mem = align_memory(args_total_len, sizeof(char));
+
+  // Total size of memory required for all arguments
+  int total_mem = offset_mem + argv_mem;
+
+  // move stack pointer to make the space for arguments
+  stackptr -= total_mem;
+
+  char *argv[argc + 1]; 
+  userptr_t user_argv = (userptr_t)stackptr;
+  userptr_t user_argv_val = (userptr_t)(stackptr + offset_mem);
+
+  size_t len;
+  int argv_val_offset = 0;
+
+  DEBUG(DB_SYSCALL_E, "runprogram: start to copy arguments into user space\n ");
+
+  for (int j = 0; j < argc; j++) {
+    char * arg = kernel_args[j]; // L: original is args[i]
+    userptr_t dest = (userptr_t)((char *)user_argv_val + argv_val_offset);
+    result = copyoutstr(arg, dest, strlen(arg) + 1, &len);
+    if (result) {
+      DEBUG(DB_SYSCALL_E, "runprogram:  args copy to user space fail .1\n ");
+      return result;
+    }
+    argv[j] = (char *)dest;
+    argv_val_offset += len;
+  }
+
+  argv[argc] = NULL;
+  result = copyout(argv, user_argv, (argc + 1) * sizeof(char *));
+  if (result) {
+    DEBUG(DB_SYSCALL_E, "runprogram:  args copy to user space fail .2\n ");
+    return result;
+  }
+
+
+
+	// end of added for A2b
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  stackptr, entrypoint);
-	
+	//enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	//		  stackptr, entrypoint);
+	enter_new_process(argc, user_argv, stackptr, entrypoint);
+
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;

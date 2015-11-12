@@ -13,14 +13,15 @@
 #include <mips/trapframe.h>
 #include <spl.h>
 #include <array.h>
-//#include <limits.h> // L: added
+
+#include <limits.h> // L: added
 #include <test.h> // L: added
 #include <vm.h> // L: added
 #include <vfs.h> //L: added
 #include <kern/fcntl.h>
 
 
-// L: #define EXECV_MAX_ARG_SIZE PATH_MAX
+#define EXECV_MAX_ARG_SIZE PATH_MAX
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -231,16 +232,81 @@ sys_fork(struct trapframe *tf,
 }
 
 // A2b:
-int sys_execv(char *program/*, char **args*/, int32_t *retval) {
+//int align_memory(int count, size_t typesize); // declare in test.h
 
-//  TODO: consider to merge sys_execv with runprogram to avoid duplication
+int align_memory(int count, size_t typesize) {
+  size_t addrsize = sizeof(userptr_t);
+  int bytes = (typesize * count);
+  bytes += bytes % addrsize == 0 ? 0 : addrsize - (bytes % addrsize);
+  return bytes;
+}
+
+
+//int sys_execv(char *program/*, char **args*/, int32_t *retval) {
+int sys_execv(const_userptr_t program, const_userptr_t args[], int32_t *retval) {
+
+/*
+ Step I: process args, copy into kernel buffer
+*/
+  DEBUG(DB_SYSCALL_E, "sys_execv: start step 1\n ");
+  int argc = 0;
+  size_t program_len = strlen((char *) program) + 1;
+  size_t args_total_len = 0;
+
+  // get the number of arguments:
+  while (args[argc] != NULL) {
+    args_total_len += strlen(((char **)args)[argc]) + 1;
+    argc ++;
+
+  }
+
+  if (program_len + args_total_len > ARG_MAX || argc > ARG_MAX/EXECV_MAX_ARG_SIZE) {
+    DEBUG(DB_SYSCALL_E, "sys_execv: Too many execv arguments \n");
+    *retval = E2BIG;
+    return 1;
+  }
+
+  int copy_res;  // L: merge copy_res with result
+  int cum_copy_len = 0; 
+
+  char kernel_program[program_len];
+  char tmp_args[args_total_len]; 
+  char *kernel_args[argc];
+
+  // copy program name (prepare kernel_program)
+  copy_res = copyinstr(program, kernel_program, program_len, NULL);
+  if (copy_res) {
+    DEBUG(DB_SYSCALL_E, "within sys_execv: copy program name fail\n");
+    *retval = copy_res;
+    return 1;
+  }
+
+  // copy args into kernel buffer (prepare kargs):
+  for (int i=0; i<argc; i++) {
+    size_t len;
+    size_t arglen = strlen(((char **)args)[i]) + 1;
+    copy_res = copyinstr(args[i], (char *)(tmp_args + cum_copy_len), arglen, &len);
+    if (copy_res) {
+      DEBUG(DB_SYSCALL_E, "within sys_execv: copy args to kernel fail\n");
+      *retval = copy_res;
+      return 1;
+    }
+    kernel_args[i] = tmp_args + cum_copy_len;
+    cum_copy_len += len;
+  }
+
+
+/*
+ Step II: Open the executable, create a new address space and load the elf into it
+*/
+  DEBUG(DB_SYSCALL_E, "sys_execv: start step 2 \n ");
   struct addrspace *as;
   struct vnode *v;
   vaddr_t entrypoint, stackptr;
   int result;
 
   /* Open the file. */
-  result = vfs_open(program, O_RDONLY, 0, &v);
+  result = vfs_open(kernel_program, O_RDONLY, 0, &v);
   if (result) {
     //return result;
     *retval = result;
@@ -289,9 +355,76 @@ int sys_execv(char *program/*, char **args*/, int32_t *retval) {
     return 1;
   }
 
-  /* Warp to user mode. */
-  enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-        stackptr, entrypoint);
+
+/*
+ Step 3: Copy the arguments from kernel buffer into user stack
+*/
+
+  DEBUG(DB_SYSCALL_E, "sys_execv: start step 3 \n ");
+
+// Don't confused with the definition in step 1:
+  // size_t program_len = strlen((char *) program) + 1;
+  // size_t args_total_len = 0;
+
+  // int total_args_len = 0;
+
+  // for (int i = 0; i < argc; i++) {
+  //   int arglen = strlen(kernel_args[i]);
+  //   total_args_len += arglen + 1; // +1 for \0
+  // } // total_args_len == args_total_len ??? <- No, they have different type
+
+  // if (total_args_len > ARG_MAX) {
+  //   return E2BIG;
+  // }
+
+  // compute the size needed for keeping user program's argv 
+  // including offset and argv_value
+  int offset_mem = align_memory(argc + 1, sizeof(char **));
+  int argv_mem = align_memory(args_total_len, sizeof(char));
+
+  // Total size of memory required for all arguments
+  int total_mem = offset_mem + argv_mem;
+
+  // move stack pointer to make the space for arguments
+  stackptr -= total_mem;
+
+  char *argv[argc + 1]; 
+  userptr_t user_argv = (userptr_t)stackptr;
+  userptr_t user_argv_val = (userptr_t)(stackptr + offset_mem);
+
+  size_t len;
+  int argv_val_offset = 0;
+
+  for (int j = 0; j < argc; j++) {
+    char * arg = kernel_args[j]; // L: original is args[i]
+    userptr_t dest = (userptr_t)((char *)user_argv_val + argv_val_offset);
+    result = copyoutstr(arg, dest, strlen(arg) + 1, &len);
+    if (result) {
+      DEBUG(DB_SYSCALL_E, "sys_execv: step3: args copy to user space fail .1\n ");
+      *retval = result;
+      return 1;
+    }
+    argv[j] = (char *)dest;
+    argv_val_offset += len;
+  }
+
+  argv[argc] = NULL;
+  result = copyout(argv, user_argv, (argc + 1) * sizeof(char *));
+  if (result) {
+    DEBUG(DB_SYSCALL_E, "sys_execv: step3: args copy to user space fail .2\n ");
+    *retval = result;
+    return 1;
+  }
+
+
+
+/*
+ Step 4: Return user mode using enter_new_process
+*/
+  DEBUG(DB_SYSCALL_E, "sys_execv: start step 4 \n ");
+
+  enter_new_process(argc, user_argv, stackptr, entrypoint);
+
   
   /* enter_new_process does not return. */
   panic("enter_new_process returned\n");

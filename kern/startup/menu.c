@@ -94,17 +94,18 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
-	if (nargs > 2) {
-		kprintf("Warning: argument passing from menu not supported\n");
-	}
+	// if (nargs > 2) {
+	// 	kprintf("Warning: argument passing from menu not supported\n");
+	// }
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
 	strcpy(progname, args[0]);
+	DEBUG(DB_SYSCALL_E, "Within cmd_progthread: progname is: %s \n ", progname);
 
-	result = runprogram(progname);
-	//result = runprogram(progname, args, nargs);
+	//result = runprogram(progname);
+	result = runprogram(progname, args, nargs);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
@@ -178,6 +179,10 @@ cmd_prog(int nargs, char **args)
 	/* drop the leading "p" */
 	args++;
 	nargs--;
+
+	DEBUG(DB_SYSCALL_E, "cmd_prog: call common_prog\n ");
+	DEBUG(DB_SYSCALL_E, "cmd_prog: nargs is: %d \n ", nargs);
+	DEBUG(DB_SYSCALL_E, "cmd_prog: args is: %p \n\n ", args);
 
 	return common_prog(nargs, args);
 }
