@@ -38,6 +38,7 @@
 #include <addrspace.h>
 #include <vm.h>
 #include "opt-A3.h"
+#include <syscall.h>
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -114,6 +115,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 	struct addrspace *as;
 	int spl;
+	bool can_be_dirty;
 
 	faultaddress &= PAGE_FRAME;
 
@@ -122,7 +124,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
+		//panic("dumbvm: got VM_FAULT_READONLY\n");
+		kprintf("VM error\n");
+		sys__exit(faulttype);
+
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -171,12 +176,15 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
+		can_be_dirty = as->as_dirty1;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
 		paddr = (faultaddress - vbase2) + as->as_pbase2;
+		can_be_dirty = as->as_dirty2;
 	}
 	else if (faultaddress >= stackbase && faultaddress < stacktop) {
 		paddr = (faultaddress - stackbase) + as->as_stackpbase;
+		can_be_dirty = true; // stack always writable
 	}
 	else {
 		return EFAULT;
@@ -184,6 +192,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	/* make sure it's page-aligned */
 	KASSERT((paddr & PAGE_FRAME) == paddr);
+
+	/* if as is not setup ready yet, memory should always be writable */
+	if (as->as_ready != true) {
+		can_be_dirty = true;
+	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
@@ -194,7 +207,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			continue;
 		}
 		ehi = faultaddress;
-		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		if (can_be_dirty) {
+			elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		} else {
+			elo = paddr | 0 | TLBLO_VALID;
+		}
+		
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
 		splx(spl);
@@ -203,7 +221,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 #ifdef OPT_A3
 	ehi = faultaddress;
-	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	// elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	if (can_be_dirty) {
+		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	} else {
+		elo = paddr | 0 | TLBLO_VALID;
+	}
 	tlb_random(ehi, elo);
 	splx(spl);
 	return 0;
@@ -225,10 +248,16 @@ as_create(void)
 	as->as_vbase1 = 0;
 	as->as_pbase1 = 0;
 	as->as_npages1 = 0;
+	as->as_dirty1 = false;
+
 	as->as_vbase2 = 0;
 	as->as_pbase2 = 0;
 	as->as_npages2 = 0;
+	as->as_dirty2 = false;
+
 	as->as_stackpbase = 0;
+
+	as->as_ready = false;
 
 	return as;
 }
@@ -286,18 +315,21 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	/* We don't use these - all pages are read-write */
 	(void)readable;
-	(void)writeable;
+	//(void)writeable;
 	(void)executable;
+	bool can_be_dirty = (bool)(writeable >> 1);
 
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;
 		as->as_npages1 = npages;
+		as->as_dirty1 = can_be_dirty;
 		return 0;
 	}
 
 	if (as->as_vbase2 == 0) {
 		as->as_vbase2 = vaddr;
 		as->as_npages2 = npages;
+		as->as_dirty2 = can_be_dirty;
 		return 0;
 	}
 
@@ -347,7 +379,8 @@ as_prepare_load(struct addrspace *as)
 int
 as_complete_load(struct addrspace *as)
 {
-	(void)as;
+	//(void)as;
+	as->as_ready = true;
 	return 0;
 }
 
