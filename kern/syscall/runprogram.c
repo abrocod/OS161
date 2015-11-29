@@ -55,6 +55,9 @@
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
+
+#define EXECV_MAX_ARG_SIZE PATH_MAX
+
 //int
 //runprogram(char *progname)
 int runprogram(char *progname, char **kernel_args, int argc) 
@@ -123,7 +126,7 @@ int runprogram(char *progname, char **kernel_args, int argc)
     int arglen = strlen(kernel_args[i]);
     args_total_len += arglen + 1; // +1 for \0
   } 
-  if (args_total_len > ARG_MAX) {
+  if (args_total_len > ARG_MAX ||  argc > ARG_MAX/EXECV_MAX_ARG_SIZE) {
     return E2BIG;
   }
 
@@ -171,8 +174,6 @@ int runprogram(char *progname, char **kernel_args, int argc)
 	// end of added for A2b
 
 	/* Warp to user mode. */
-	//enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-	//		  stackptr, entrypoint);
 	enter_new_process(argc, user_argv, stackptr, entrypoint);
 
 	/* enter_new_process does not return. */

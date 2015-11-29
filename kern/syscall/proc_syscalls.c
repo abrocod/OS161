@@ -366,17 +366,6 @@ int sys_execv(const_userptr_t program, const_userptr_t args[], int32_t *retval) 
   // size_t program_len = strlen((char *) program) + 1;
   // size_t args_total_len = 0;
 
-  // int total_args_len = 0;
-
-  // for (int i = 0; i < argc; i++) {
-  //   int arglen = strlen(kernel_args[i]);
-  //   total_args_len += arglen + 1; // +1 for \0
-  // } // total_args_len == args_total_len ??? <- No, they have different type
-
-  // if (total_args_len > ARG_MAX) {
-  //   return E2BIG;
-  // }
-
   // compute the size needed for keeping user program's argv 
   // including offset and argv_value
   int offset_mem = align_memory(argc + 1, sizeof(char **));
