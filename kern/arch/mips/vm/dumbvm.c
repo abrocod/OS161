@@ -53,10 +53,59 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+struct coremap_entry {
+	int next; // points to next entry, when next entry is continuous
+		// when there is no next entry, set to -1
+	bool occupied;
+};
+
+static struct coremap_entry * coremap = NULL;
+static bool coremap_ready = false;
+int total_page;
+//static bool tlb_full = false;
+
+paddr_t start_addr, end_addr;
+
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+	DEBUG(DB_VM, "start of vm_bootstrap\n ");
+	/* get total usable memory size and pages in the beginning */
+	paddr_t lo, hi;
+	ram_getsize(&lo, &hi); //get total usable physical address (lo,hi)
+	total_page = (hi - lo)/PAGE_SIZE; // how many page can we use in the beginning
+	DEBUG(DB_VM, "total_page is: %d\n ",total_page);
+
+	/* allocate enough memory to contain maximum size of coremap */
+	int coremap_size = sizeof(struct coremap_entry)*total_page;
+	int coremap_page = (coremap_size + PAGE_SIZE)/PAGE_SIZE; // -1 ??
+	total_page = total_page - coremap_page;
+	paddr_t coremap_addr = ram_stealmem(coremap_page);
+	
+	
+	DEBUG(DB_VM, "total_page is: %d\n ",total_page);
+
+	/* initialize coremap */
+	coremap = (struct coremap_entry*)PADDR_TO_KVADDR(coremap_addr);
+	DEBUG(DB_VM, "middle of vm_bootstrap\n ");
+	for(int i=0; i<total_page; i++) {
+		DEBUG(DB_VM, "vm_bootstrap: loop\n ");
+		(coremap + i)->occupied = false;
+		(coremap + i)->next = -1; //no next entry is allocated yet
+	}
+
+	DEBUG(DB_VM, "2 of vm_bootstrap\n ");
+
+	/* get the remaining usable memory size */
+	ram_getsize(&lo, &hi);
+	start_addr = lo;
+	end_addr = hi;
+	coremap_ready = true;
+
+	DEBUG(DB_VM, "end of vm_bootstrap\n ");
+	// finish setup vm, should not call ram_stealmem after this step
+	return;
+
 }
 
 static
@@ -64,10 +113,37 @@ paddr_t
 getppages(unsigned long npages)
 {
 	paddr_t addr;
+	struct coremap_entry* tmp_coremap_entry = NULL;
 
 	spinlock_acquire(&stealmem_lock);
 
-	addr = ram_stealmem(npages);
+	if (coremap_ready != true) {
+		// if coremap is not setup ready, only happen at early bootup stage
+		addr = ram_stealmem(npages);
+	} else {
+		// after coremap setup:
+		int first_available_entry;
+		for (int i=0; i<total_page; ++i) {
+			/* look for first_available_entry */
+			if ((coremap+i)->occupied) 
+				continue;
+			(coremap+i)->occupied = true;
+
+			/* keep looking for npages available entry */
+			if (tmp_coremap_entry == NULL) {
+				first_available_entry = i;
+			} else {
+				tmp_coremap_entry->next = i;
+			}
+			tmp_coremap_entry = (coremap+i);
+			npages -= 1;
+			if (npages == 0) 
+				break;
+		}
+
+		addr = (paddr_t)(start_addr + first_available_entry*PAGE_SIZE);
+
+	}
 	
 	spinlock_release(&stealmem_lock);
 	return addr;
@@ -88,9 +164,17 @@ alloc_kpages(int npages)
 void 
 free_kpages(vaddr_t addr)
 {
-	/* nothing - leak the memory. */
+	paddr_t paddr = KVADDR_TO_PADDR(addr);
+	int page_index = (paddr - start_addr)/PAGE_SIZE;
 
-	(void)addr;
+	while (page_index > -1) {
+		if ((coremap + page_index)->occupied == false)
+			panic("dumbvm is trying to free an empty page? ");
+		(coremap + page_index)->occupied = false;
+		page_index = (coremap + page_index)->next;
+		(coremap + page_index)->next = -1;
+	}
+	
 }
 
 void
@@ -112,7 +196,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
 	paddr_t paddr;
 	int i;
-	uint32_t ehi, elo;
+	uint32_t ehi, elo; // check UT's csc369 slide for reference
 	struct addrspace *as;
 	int spl;
 	bool can_be_dirty;
@@ -220,7 +304,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 #ifdef OPT_A3
-	ehi = faultaddress;
+	ehi = faultaddress; // by definition, ehi store the address
 	// elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
 	if (can_be_dirty) {
 		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
@@ -236,6 +320,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	return EFAULT;
 #endif
 }
+
+
+
+
 
 struct addrspace *
 as_create(void)
@@ -265,6 +353,11 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+	/* delete all segments */
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
+	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
+
 	kfree(as);
 }
 
@@ -433,3 +526,4 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	*ret = new;
 	return 0;
 }
+
