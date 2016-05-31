@@ -1,5 +1,5 @@
 # OS/161
-OS/161, a simplified POSIX style Operating System, for CS350 by Jinchao Lin, University of Waterloo
+OS/161, a simplified POSIX style Operating System, augmented by Jinchao Lin, as part of coursework for Operating System Course. 
 
 ## Setup
 
